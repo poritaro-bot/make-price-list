@@ -77,6 +77,9 @@ if uploaded_file is not None:
             try:
                 # PDFの解析処理
                 with pdfplumber.open(uploaded_file) as pdf:
+                    # ★追加：ページを跨いでも見出しの列インデックスを記憶しておくための変数
+                    saved_col_indices = None 
+
                     for page in pdf.pages:
                         tables = page.extract_tables()
                         for table in tables:
@@ -102,14 +105,27 @@ if uploaded_file is not None:
                                     col_indices = temp_indices
                                     break
 
-                            if header_idx == -1: continue
+                            # ★変更：見出しが見つかったかどうかの判定ロジック
+                            start_row = 0
+                            if header_idx != -1:
+                                # この表で見出しが見つかった場合（1ページ目など）は、記憶を更新し、次の行から取得開始
+                                saved_col_indices = col_indices
+                                start_row = header_idx + 1
+                            else:
+                                # 見出しが見つからなかった場合（2ページ目以降など）
+                                if saved_col_indices is not None:
+                                    # 以前記憶した見出し構成を使って、1行目（インデックス0）から取得開始
+                                    col_indices = saved_col_indices
+                                    start_row = 0
+                                else:
+                                    # まだ一度も見出しを見つけていない場合はスキップ
+                                    continue
 
                             # データ行の抽出
-                            for i, row in df_table.iloc[header_idx + 1:].iterrows():
+                            for i, row in df_table.iloc[start_row:].iterrows():
                                 row_list = [str(cell).replace('\n', '') if cell else "" for cell in row.tolist()]
                                 if all(cell.strip() == "" for cell in row_list): continue
 
-                                # ここで format_text() を使って全角・半角の文字整形を行います
                                 extracted = {
                                     "品番": format_text(row_list[col_indices["品番"]]) if col_indices["品番"] != -1 and col_indices["品番"] < len(row_list) else "",
                                     "BM": format_text(row_list[col_indices["BM"]]) if col_indices["BM"] != -1 and col_indices["BM"] < len(row_list) else "",
